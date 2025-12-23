@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Plate Merge Tool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+
+<body class="bg-slate-900 text-slate-200 h-screen">
+
+<div id="app" class="h-full flex flex-col">
+
+    <!-- Header -->
+    <header class="p-4 bg-slate-800 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Plate Merge Tool</h1>
+        <div class="text-sm">
+            Plate: <span class="font-mono text-green-400">[[ currentPlate ]]</span>
+            &nbsp; | &nbsp;
+            [[ currentIndex + 1 ]] / [[ totalGroups ]]
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 overflow-auto p-6">
+
+        <div v-if="loading" class="text-center text-gray-400">
+            Loading data...
+        </div>
+
+        <div v-else-if="finished" class="text-center text-green-400 text-3xl">
+            All Done ✅
+        </div>
+
+        <div v-else class="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div v-for="(img, i) in currentImages"
+                 :key="i"
+                 @click="toggle(img.url)"
+                 :class="[
+                    'border rounded-lg p-2 cursor-pointer transition',
+                    selected.includes(img.url)
+                        ? 'border-green-400 bg-green-900'
+                        : 'border-slate-700'
+                 ]">
+
+                <img :src="img.url" class="h-40 w-full object-contain bg-black mb-2">
+
+                <div class="text-xs font-mono truncate">
+                    [[ img.url ]]
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="p-4 bg-slate-800 flex gap-4">
+        <button @click="prev"
+                class="px-4 py-2 bg-gray-700 rounded"
+                :disabled="currentIndex === 0">
+            Prev
+        </button>
+
+        <button @click="save"
+                class="px-4 py-2 bg-green-600 rounded"
+                :disabled="selected.length !== 2">
+            Save Pair
+        </button>
+
+        <button @click="next"
+                class="px-4 py-2 bg-blue-600 rounded">
+            Next
+        </button>
+
+        <div class="ml-auto text-sm">
+            Selected: [[ selected.length ]] / 2
+        </div>
+    </footer>
+
+</div>
+
+<script>
+const { createApp } = Vue;
+
+createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+        return {
+            groups: [],
+            currentIndex: 0,
+            selected: [],
+            loading: true,
+            finished: false
+        }
+    },
+    computed: {
+        totalGroups() { return this.groups.length },
+        currentGroup() { return this.groups[this.currentIndex] },
+        currentPlate() { return this.currentGroup?.plate || '---' },
+        currentImages() { return this.currentGroup?.images || [] }
+    },
+    async mounted() {
+        const res = await fetch('/api/data');
+        this.groups = await res.json();
+        this.loading = false;
+    },
+    methods: {
+        toggle(url) {
+            if (this.selected.includes(url))
+                this.selected = this.selected.filter(u => u !== url);
+            else if (this.selected.length < 2)
+                this.selected.push(url);
+        },
+        async save() {
+            if (this.selected.length !== 2) return;
+
+            await fetch('/api/save-merge', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ urls: this.selected })
+            });
+
+            this.selected = [];
+        },
+        next() {
+            if (this.currentIndex < this.groups.length - 1) {
+                this.currentIndex++;
+                this.selected = [];
+            } else {
+                this.finished = true;
+            }
+        },
+        prev() {
+            if (this.currentIndex > 0) {
+                this.currentIndex--;
+                this.selected = [];
+            }
+        }
+    }
+}).mount('#app');
+</script>
+
+</body>
+</html>

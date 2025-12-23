@@ -1,254 +1,222 @@
-import streamlit as st
+import gradio as gr
 import json
-import pandas as pd
-import math
+import os
+import re
 from collections import defaultdict
 
 # ================= CONFIGURATION =================
-PAGE_TITLE = "🚗 AirGarage Neural Visualizer"
-DEFAULT_JSON_FILE = "ranked_plates.json"  # Falls back to vehicle_metadata.json if missing
-ITEMS_PER_PAGE = 20  # Number of PLATES per page (not images)
-# =================================================
+DATA_FILE = "ranked_plates.json"
+OUTPUT_FILE = "output_pairs.txt"
 
-st.set_page_config(
-    page_title=PAGE_TITLE,
-    page_icon="🚘",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ================= DATA PROCESSING =================
+def normalize_plate(p):
+    """Standardizes plate numbers to group them effectively."""
+    if not p: return "UNKNOWN"
+    return re.sub(r'[^A-Z0-9]', '', str(p).upper())
 
-# --- CSS STYLING ---
-st.markdown("""
-<style>
-    .plate-header {
-        background-color: #f0f2f6;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 5px solid #ff4b4b;
-        margin-bottom: 10px;
-    }
-    .metric-card {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 8px;
-        text-align: center;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stImage {
-        border-radius: 8px;
-        transition: transform 0.2s;
-    }
-    .stImage:hover {
-        transform: scale(1.02);
-    }
-    /* Hide fullscreen button on images to keep UI clean */
-    button[title="View fullscreen"] {
-        display: none;
-    }
-</style>
-""", unsafe_allow_html=True)
+def load_data():
+    """Loads JSON, groups by plate, and sorts by group size."""
+    if not os.path.exists(DATA_FILE):
+        print(f"Warning: {DATA_FILE} not found. Creating empty dataset.")
+        return []
 
-# --- DATA LOADER (CACHED) ---
-@st.cache_data(show_spinner=True)
-def load_and_group_data(filename):
-    """
-    Loads JSON and groups it by plate.
-    Returns: dict {plate: [list of entries]}, dict (stats)
-    """
-    data = []
-    
-    # Try loading the preferred file, fallback to main DB
-    files_to_try = [filename, "vehicle_metadata.json", "ranked_plates.json"]
-    loaded_file = None
-    
-    for f in files_to_try:
-        try:
-            with open(f, 'r') as file:
-                data = json.load(file)
-                loaded_file = f
-                break
-        except FileNotFoundError:
-            continue
-            
-    if not data:
-        return {}, {"error": "No JSON file found. Please ensure 'ranked_plates.json' exists."}
+    try:
+        with open(DATA_FILE, 'r') as f:
+            raw_data = json.load(f)
+    except Exception as e:
+        print(f"Error loading JSON: {e}")
+        return []
 
-    # Grouping Logic
+    # Flatten list if necessary
+    items = []
+    if isinstance(raw_data, list):
+        for item in raw_data:
+            if isinstance(item, list): items.extend(item)
+            else: items.append(item)
+
+    # Group by Normalized Plate
     grouped = defaultdict(list)
-    total_images = 0
+    for entry in items:
+        plate = entry.get('plate', 'UNKNOWN')
+        clean_plate = normalize_plate(plate)
+        
+        img_data = {
+            "url": entry.get('url', ''),
+            "plate": plate,
+            "score": entry.get('score', entry.get('confidence', 'N/A')),
+            "meta": entry.get('meta', {})
+        }
+        grouped[clean_plate].append(img_data)
+
+    sorted_groups = []
+    for plate, images in grouped.items():
+        sorted_groups.append({
+            "group_plate": plate,
+            "images": images,
+            "count": len(images)
+        })
+
+    # Sort: Largest groups first
+    sorted_groups.sort(key=lambda x: (-x['count'], x['group_plate']))
     
-    for entry in data:
-        plate = entry.get('plate', 'UNKNOWN').strip().upper()
-        # Ensure we have a valid entry
-        if plate:
-            grouped[plate].append(entry)
-            total_images += 1
-
-    # Calculate Stats
-    stats = {
-        "file": loaded_file,
-        "total_plates": len(grouped),
-        "total_images": total_images,
-        "pairs": sum(1 for v in grouped.values() if len(v) == 2),
-        "singles": sum(1 for v in grouped.values() if len(v) == 1),
-        "multiples": sum(1 for v in grouped.values() if len(v) > 2),
-    }
-
-    # Sort plates by size (Multiples first, then Pairs, then Singles)
-    # Inside each category, sort alphanumerically
-    sorted_plates = sorted(
-        grouped.items(), 
-        key=lambda x: (len(x[1]) == 2, len(x[1]) > 2, x[0]), 
-        reverse=True
-    )
-    
-    # Convert back to dict for easy access, but keep order
-    return dict(sorted_plates), stats
-
-# --- SIDEBAR CONTROLS ---
-st.sidebar.title("🛠️ Mission Control")
+    print(f"Loaded {len(sorted_groups)} groups.")
+    return sorted_groups
 
 # Load Data
-plate_groups, stats = load_and_group_data(DEFAULT_JSON_FILE)
+DATASET = load_data()
 
-if "error" in stats:
-    st.error(stats["error"])
-    st.stop()
+# ================= APP LOGIC =================
 
-# Stats Display
-with st.sidebar.expander("📊 Dataset Metrics", expanded=True):
-    col_a, col_b = st.columns(2)
-    col_a.metric("Plates", stats['total_plates'])
-    col_b.metric("Images", stats['total_images'])
-    st.divider()
-    st.caption(f"Source: `{stats['file']}`")
-    st.progress(stats['pairs'] / stats['total_plates'] if stats['total_plates'] else 0, text=f"Pairs: {stats['pairs']}")
-    st.progress(stats['multiples'] / stats['total_plates'] if stats['total_plates'] else 0, text=f"Multiples: {stats['multiples']}")
+def get_current_group_data(index):
+    if not DATASET: return None
+    idx = max(0, min(index, len(DATASET)-1))
+    return DATASET[idx]
 
-# Filters
-st.sidebar.header("🔍 Filters")
-search_query = st.sidebar.text_input("Search Plate Number", "").upper()
-filter_type = st.sidebar.radio(
-    "Show Group Size:",
-    ["All", "Exact Pairs (2)", "Multiples (3+)", "Singles (1)"],
-    index=0
-)
+def refresh_ui(index, _):
+    """Refreshes the Gallery and Headers."""
+    if not DATASET:
+        return [
+            [], 
+            "## No Data Found", 
+            "Please check ranked_plates.json",
+            {},
+            gr.update(interactive=False)
+        ]
 
-# Apply Filters
-filtered_keys = list(plate_groups.keys())
-
-# 1. Type Filter
-if filter_type == "Exact Pairs (2)":
-    filtered_keys = [k for k in filtered_keys if len(plate_groups[k]) == 2]
-elif filter_type == "Multiples (3+)":
-    filtered_keys = [k for k in filtered_keys if len(plate_groups[k]) > 2]
-elif filter_type == "Singles (1)":
-    filtered_keys = [k for k in filtered_keys if len(plate_groups[k]) == 1]
-
-# 2. Search Filter
-if search_query:
-    filtered_keys = [k for k in filtered_keys if search_query in k]
-
-# --- PAGINATION LOGIC ---
-total_filtered = len(filtered_keys)
-total_pages = math.ceil(total_filtered / ITEMS_PER_PAGE)
-
-if total_pages > 1:
-    page_number = st.sidebar.number_input(
-        f"Page (1 - {total_pages})", 
-        min_value=1, 
-        max_value=total_pages, 
-        value=1
-    )
-else:
-    page_number = 1
-
-start_idx = (page_number - 1) * ITEMS_PER_PAGE
-end_idx = start_idx + ITEMS_PER_PAGE
-current_batch_keys = filtered_keys[start_idx:end_idx]
-
-# --- MAIN UI RENDER ---
-st.title(PAGE_TITLE)
-st.markdown(f"**Showing {len(current_batch_keys)} plates** (Indices {start_idx}-{end_idx} of {total_filtered})")
-st.divider()
-
-if not current_batch_keys:
-    st.warning("No plates match your filter criteria.")
-    st.stop()
-
-# Loop through the current page's plates
-for plate in current_batch_keys:
-    entries = plate_groups[plate]
-    count = len(entries)
+    group = get_current_group_data(index)
     
-    # Sort entries by URL to maintain timeline order
-    entries.sort(key=lambda x: x.get('url', ''))
+    # Header Info
+    header = f"### 🚗 Group {index + 1} / {len(DATASET)} : Plate `{group['group_plate']}` ({group['count']} images)"
+    
+    # Prepare Gallery: List of (url, label)
+    gallery_data = []
+    for img in group['images']:
+        label = f"{img['plate']} | Conf: {img['score']}"
+        gallery_data.append((img['url'], label))
 
-    # Determine Color/Icon based on group size
-    if count == 2:
-        icon = "✅"
-        color = "green"
-        label = "Verified Pair"
-    elif count > 2:
-        icon = "⚠️"
-        color = "orange"
-        label = "Ambiguous Group"
+    return [
+        gallery_data,
+        header,
+        "Select images to view details...",
+        None,
+        gr.update(interactive=False)
+    ]
+
+def on_select(evt: gr.SelectData, index, current_selections):
+    """Handles image selection."""
+    group = get_current_group_data(index)
+    selected_index = evt.index
+    selected_img_data = group['images'][selected_index]
+    selected_url = selected_img_data['url']
+
+    # Update Selections (Max 2, FIFO)
+    new_selections = list(current_selections)
+    if selected_url in new_selections:
+        new_selections.remove(selected_url)
     else:
-        icon = "❌"
-        color = "red"
-        label = "Single"
-
-    # Container for the Plate Group
-    with st.container():
-        # Header
-        st.markdown(f"""
-        <div class='plate-header' style='border-left: 5px solid {color};'>
-            <h3>{icon} {plate} <span style='font-size: 0.6em; color: gray;'>({count} images - {label})</span></h3>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # --- DYNAMIC LAYOUT ENGINE ---
-        
-        # SCENARIO A: PAIR (Side by Side)
-        if count == 2:
-            cols = st.columns(2)
-            for i, entry in enumerate(entries):
-                with cols[i]:
-                    st.image(entry['url'], use_column_width=True)
-                    # Metadata Stats
-                    meta = entry.get('meta', {})
-                    if meta:
-                        st.caption(f"Blur: {meta.get('blur_score', '?')} | Bright: {meta.get('brightness', '?')}")
-        
-        # SCENARIO B: SINGLE (Centered)
-        elif count == 1:
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.image(entries[0]['url'], use_column_width=True)
-                st.caption("Unpaired Single Entry")
-
-        # SCENARIO C: MULTIPLES (Grid)
+        if len(new_selections) < 2:
+            new_selections.append(selected_url)
         else:
-            # Grid of 4 columns
-            grid_cols = 4
-            rows = math.ceil(count / grid_cols)
-            
-            for row in range(rows):
-                cols = st.columns(grid_cols)
-                for c in range(grid_cols):
-                    idx = row * grid_cols + c
-                    if idx < count:
-                        entry = entries[idx]
-                        with cols[c]:
-                            st.image(entry['url'], use_column_width=True)
-                            st.caption(f"Img {idx+1}")
+            new_selections.pop(0)
+            new_selections.append(selected_url)
 
-        # Expandable Details (JSON dump for debugging)
-        with st.expander(f"View Raw Data for {plate}"):
-            st.json(entries)
-        
-        st.markdown("---")  # Separator between plates
+    # Metadata View
+    meta_view = {
+        "EXTRACTED_PLATE": selected_img_data['plate'],
+        "CONFIDENCE": selected_img_data['score'],
+        "URL": selected_url,
+        "METADATA": selected_img_data['meta']
+    }
 
-# Footer
-st.markdown("<div style='text-align: center; color: gray;'>AirGarage Extraction Pipeline • v2.0</div>", unsafe_allow_html=True)
+    status = f"**Selected: {len(new_selections)} / 2**"
+    can_save = (len(new_selections) == 2)
+
+    return new_selections, meta_view, status, gr.update(interactive=can_save)
+
+def save_pair(current_selections):
+    """Writes to file."""
+    if len(current_selections) != 2:
+        return "Error: Select 2 images", gr.update(), current_selections
+    
+    line = f"{current_selections[0]},{current_selections[1]}\n"
+    
+    try:
+        with open(OUTPUT_FILE, 'a') as f:
+            f.write(line)
+        return f"✅ Saved Pair!", gr.update(value=[], interactive=False), []
+    except Exception as e:
+        return f"Error: {e}", gr.update(), current_selections
+
+def navigation(action, current_index):
+    new_index = current_index + (1 if action == "next" else -1)
+    new_index = max(0, min(new_index, len(DATASET) - 1))
+    return new_index, []
+
+# ================= UI LAYOUT =================
+# FIX: Removed arguments from Blocks() to prevent crashes in newer Gradio versions
+with gr.Blocks() as app:
+    
+    # State
+    current_index = gr.State(0)
+    selected_urls = gr.State([])
+
+    gr.Markdown("# 🚘 AirGarage Pair Merger")
+
+    # Header & Nav
+    with gr.Row():
+        with gr.Column(scale=3):
+            header_display = gr.Markdown("### Loading...")
+        with gr.Column(scale=1):
+            with gr.Row():
+                prev_btn = gr.Button("⬅️ Prev")
+                next_btn = gr.Button("Next ➡️", variant="primary")
+
+    # Main Area
+    with gr.Row():
+        # Gallery
+        with gr.Column(scale=3):
+            gallery = gr.Gallery(
+                label="Image Group", 
+                columns=[3], 
+                height=600, 
+                object_fit="contain",
+                allow_preview=False,
+                interactive=True
+            )
+
+        # Sidebar
+        with gr.Column(scale=1):
+            gr.Markdown("### 🛠️ Inspector")
+            status_display = gr.Markdown("Selected: 0 / 2")
+            save_btn = gr.Button("🔗 SAVE PAIR", variant="stop", interactive=False)
+            gr.Markdown("---")
+            gr.Markdown("**Live Image Details:**")
+            json_inspector = gr.JSON(label="Extracted Data")
+
+
+    # Events
+    app.load(refresh_ui, inputs=[current_index, selected_urls], outputs=[gallery, header_display, status_display, json_inspector, save_btn])
+
+    gallery.select(
+        on_select, 
+        inputs=[current_index, selected_urls], 
+        outputs=[selected_urls, json_inspector, status_display, save_btn]
+    )
+
+    save_btn.click(
+        save_pair,
+        inputs=[selected_urls],
+        outputs=[status_display, save_btn, selected_urls]
+    )
+
+    prev_btn.click(lambda idx: navigation("prev", idx), inputs=[current_index], outputs=[current_index, selected_urls]).then(
+        refresh_ui, inputs=[current_index, selected_urls], outputs=[gallery, header_display, status_display, json_inspector, save_btn]
+    )
+
+    next_btn.click(lambda idx: navigation("next", idx), inputs=[current_index], outputs=[current_index, selected_urls]).then(
+        refresh_ui, inputs=[current_index, selected_urls], outputs=[gallery, header_display, status_display, json_inspector, save_btn]
+    )
+
+if __name__ == "__main__":
+    # FIX: Pass allowed_paths=['.'] to ensure local files/jsons can be read if needed
+    app.launch(allowed_paths=['.'])
