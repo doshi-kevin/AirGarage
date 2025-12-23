@@ -1,0 +1,11 @@
+# Ignore the virtual environment (Thousands of files)
+venv/
+__pycache__/
+
+# Ignore massive data files
+*.json
+*.txt
+*.csv
+
+# Ignore system files
+.DS_Store

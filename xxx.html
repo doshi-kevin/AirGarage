@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Event Gallery - Plate 9EM8316</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 { color: #333; margin-bottom: 30px; }
+        
+        /* Grid Container */
+        .gallery-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        /* Image Card */
+        .image-card {
+            background: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+        .image-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+
+        /* Label details */
+        .details {
+            padding: 15px;
+            font-size: 0.9em;
+            color: #555;
+        }
+        .plate-tag {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .conf-high { color: #28a745; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Plate Recognition Gallery: 9EM8316</h1>
+
+    <div class="gallery-container" id="gallery">
+        </div>
+
+    <script>
+        const imageData = [
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_9cc8f2db-c1a6-4c70-8ae2-9782517bab12.jpeg", "conf": 0.9997 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_b3151591-8bda-4f4c-a8fe-d3ad9f2d1eff.jpeg", "conf": 0.9997 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_b7045683-1766-4c89-990f-8b2f7bd89d5b.jpeg", "conf": 0.9995 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_cde86c02-868e-4e27-9df8-d5d37694ec0d.jpeg", "conf": 0.9974 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_d520b17f-e0a1-4aba-b990-b4c614e3f6ae.jpeg", "conf": 0.9995 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_dd45e833-0034-4f08-9ae3-3fc0165ea3bf.jpeg", "conf": 0.9995 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_df407569-eb07-4cff-96b9-147612185be0.jpeg", "conf": 0.9976 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_dfef9959-3f0e-4f88-8ff6-60af408e7402.jpeg", "conf": 0.9994 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_f1729fb7-d419-4112-b472-715e82c33c68.jpeg", "conf": 0.9996 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_f1a1c205-52c6-4941-9c02-09c8689712a5.jpeg", "conf": 0.9994 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_f6aae0d6-3bd3-4a94-a9f8-2619e88fb0d0.jpeg", "conf": 0.996 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_fea0d449-ce0c-478c-8244-f64966da054b.jpeg", "conf": 0.9998 },
+            { "url": "https://storage.googleapis.com/camera_event/tripwire_fed19571-2c59-475d-92d2-e3569b995609.jpeg", "conf": 0.9996 }
+        ];
+
+        const gallery = document.getElementById('gallery');
+
+        imageData.forEach(item => {
+            const card = document.createElement('div');
+            card.className = 'image-card';
+            card.innerHTML = `
+                <a href="${item.url}" target="_blank">
+                    <img src="${item.url}" alt="Capture">
+                </a>
+                <div class="details">
+                    <div class="plate-tag">9EM8316</div><br>
+                    Confidence: <span class="conf-high">${(item.conf * 100).toFixed(2)}%</span>
+                </div>
+            `;
+            gallery.appendChild(card);
+        });
+    </script>
+</body>
+</html>
